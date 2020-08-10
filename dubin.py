@@ -36,12 +36,11 @@ def T_transform2d(aTb, bP):
     return aP
 
 
-base_dt = 0.1  # simulation time step size
 step_dt = 1.0/5.0  # action step size
 
 # physical constrain
 max_v = 2.0
-min_v = -0.1
+min_v = 0.0
 max_phi = np.pi / 3.0
 
 
@@ -51,8 +50,6 @@ class DubinEnv(BaseEnv):
         """
         Args:
         """
-
-        self.base_dt = base_dt
         self.step_dt = step_dt
 
         self.max_v = max_v
@@ -343,12 +340,15 @@ class DubinEnv(BaseEnv):
             'cbounds': self.cbounds
         }
 
+    def distance(self): pass
+
+
 #################### collision-unaware version #################
 
 
 class DubinEnvCU(DubinEnv):
     def __init__(self):
-        super().__init__(obs_list_list=[])
+        super().__init__()
         self.observation_space = self.state_space
         self.max_time = 50.0
 
@@ -360,3 +360,10 @@ class DubinEnvCU(DubinEnv):
     def _obs(self):
         obs = super()._obs()[1]  # without local map
         return obs
+
+if __name__ == "__main__":
+    env = DubinEnvCU()
+    env.render()
+    for i in range(50):
+        env.step(np.random.randn(2))
+        env.render()

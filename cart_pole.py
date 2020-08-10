@@ -1,13 +1,13 @@
 
 from scipy import integrate
-from rl_planner.env.base_env import BaseEnv
+from base_env import BaseEnv
 import numpy as np
 from numpy import cos, sin
-from rl_planner.env.dubin import normalize_angle
-from rl_planner.utils.draw import plot_obs_list
+
+from draw import plot_obs_list
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from rl_planner.env.rigid import CartPole, Obstacle
+from rigid import CartPole, Obstacle
 import gym
 import gym.spaces as spaces
 
@@ -32,7 +32,11 @@ MAX_W = 4
 
 MAX_F = 300
 
-
+def normalize_angle(angle):
+    norm_angle = angle % (2 * np.pi)
+    if norm_angle > np.pi:
+        norm_angle -= 2 * np.pi
+    return norm_angle
 class CartPoleEnv(BaseEnv):
     """
     Description:
@@ -75,7 +79,6 @@ class CartPoleEnv(BaseEnv):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.base_dt = 0.05
         self.step_dt = 0.01
 
         self.state_bounds = np.array(
@@ -229,14 +232,14 @@ class CartPoleEnv(BaseEnv):
         for obs in obs_list:
             self.add_obs(obs)
 
-# if __name__ == "__main__":
-#     env = CartPoleEnv()
-#     obs = env.reset()
-#     env.render()
+if __name__ == "__main__":
+    env = CartPoleEnv()
+    obs = env.reset()
+    env.render()
 
-#     while True:
-#         obs, reward, done, info = env.step(np.array([-300.0]))
-#         print(env.state)
-#         env.render()
-#         if done:
-#             break
+    while True:
+        obs, reward, done, info = env.step(np.array([300.0]))
+        # print(env.state)
+        env.render()
+        if done:
+            break

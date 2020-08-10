@@ -1,3 +1,4 @@
+from scipy.linalg import solve_continuous_are, solve_discrete_are
 import pickle
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
@@ -10,8 +11,8 @@ from scipy import integrate
 
 
 ############################### quadcopter parameters #############################
-mass = 0.2 # kg
-g = 9.8 # m/s/s
+mass = 0.2  # kg
+g = 9.8  # m/s/s
 Ix, Iy, Iz = 0.00025, 0.00025, 0.0003738
 I = np.array([(0.00025, 0, 0),
               (0, 0.00025, 0),
@@ -20,7 +21,7 @@ I = np.array([(0.00025, 0, 0),
 invI = np.linalg.inv(I)
 
 prop_radius = 0.04
-arm_length = 0.086 # meter
+arm_length = 0.086  # meter
 height = 0.05
 minF = 0.0
 maxF = 2.0 * mass * g
@@ -28,16 +29,16 @@ L = arm_length
 H = height
 km = 1.5e-9
 kf = 6.11e-8
-r = km / kf # drag coefficient
+r = km / kf  # drag coefficient
 
 #  [ F  ]         [ F1 ]
 #  | M1 |  = A *  | F2 |
 #  | M2 |         | F3 |
 #  [ M3 ]         [ F4 ]
-A = np.array([[ 1,  1,  1,  1],
-              [ 0,  L,  0, -L],
+A = np.array([[1,  1,  1,  1],
+              [0,  L,  0, -L],
               [-L,  0,  L,  0],
-              [ r, -r,  r, -r]])
+              [r, -r,  r, -r]])
 
 invA = np.linalg.inv(A)
 
@@ -49,7 +50,6 @@ body_frame = np.array([(L, 0, 0, 1),
                        (0, 0, H, 1)])
 
 
-
 MIN_X = -1
 MAX_X = 1
 MIN_Y = -1
@@ -57,26 +57,26 @@ MAX_Y = 1
 MIN_Z = 0
 MAX_Z = 2
 
-MIN_X_DOT = -4
-MAX_X_DOT = 4
-MIN_Y_DOT = -4
-MAX_Y_DOT = 4
-MIN_Z_DOT = -4
-MAX_Z_DOT = 4
+MIN_X_DOT = -1
+MAX_X_DOT = 1
+MIN_Y_DOT = -1
+MAX_Y_DOT = 1
+MIN_Z_DOT = -1
+MAX_Z_DOT = 1
 
-MIN_ROLL = -np.pi/6   # Force the quadcopter stay near the stable 
-MAX_ROLL = np.pi/6    # position, otherwise the simulation becomes inaccurate
-MIN_PITCH = -np.pi/6
-MAX_PITCH = np.pi/6
+MIN_ROLL = -np.pi/10   # Force the quadcopter stay near the stable
+MAX_ROLL = np.pi/10    # position, otherwise the simulation becomes inaccurate
+MIN_PITCH = -np.pi/10
+MAX_PITCH = np.pi/10
 MIN_YAW = -np.pi
 MAX_YAW = np.pi
 
-MIN_ROLL_DOT = -np.pi*2*3
-MAX_ROLL_DOT = np.pi*2*3
-MIN_PITCH_DOT = -np.pi*2*3
-MAX_PITCH_DOT = np.pi*2*3
-MIN_YAW_DOT = -np.pi*2*3
-MAX_YAW_DOT = np.pi*2*3
+MIN_ROLL_DOT = -np.pi*2
+MAX_ROLL_DOT = np.pi*2
+MIN_PITCH_DOT = -np.pi*2
+MAX_PITCH_DOT = np.pi*2
+MIN_YAW_DOT = -np.pi*2
+MAX_YAW_DOT = np.pi*2
 
 MIN_THRUST = minF
 MAX_THRUST = maxF
@@ -94,6 +94,7 @@ def wrap_angle(angle):
         wrapped_angle -= 2 * np.pi
     return wrapped_angle
 
+
 class QuadcopterEnv(BaseEnv):
     """ Quadcopter class
 
@@ -103,6 +104,7 @@ class QuadcopterEnv(BaseEnv):
     M      - 3 x 1, moments output from controller
     params - system parameters struct, arm_length, g, mass, etc.
     """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.state_bounds = np.array([
@@ -121,7 +123,7 @@ class QuadcopterEnv(BaseEnv):
         ], dtype=float)
 
         self.observation_space = spaces.Box(
-            low = self.state_bounds[:,0], high = self.state_bounds[:,1],
+            low=self.state_bounds[:, 0], high=self.state_bounds[:, 1],
         )
 
         self.cbounds = np.array(
@@ -130,7 +132,7 @@ class QuadcopterEnv(BaseEnv):
              [MIN_PITCH_TORQUE, MAX_PITCH_TORQUE],
              [MIN_YAW_TORQUE, MAX_YAW_TORQUE]]
         )
-        
+
         # actions are normalized for the reinforcement learning
         self.bias = (self.cbounds[:, 1] + self.cbounds[:, 0])/2
         self.scale = (self.cbounds[:, 1] - self.cbounds[:, 0])/2
@@ -138,12 +140,11 @@ class QuadcopterEnv(BaseEnv):
             low=-1.0, high=1.0, shape=(len(self.cbounds),))
 
         self.dt = 0.1
-        self.max_time = 20.0
+        self.max_time = 10.0
         self.current_time = 0.0
 
-        self.state = np.zeros_like(self.state_bounds[:,0])
-        self.goal = np.zeros_like(self.state_bounds[:,0])
-
+        self.state = np.zeros_like(self.state_bounds[:, 0])
+        self.goal = np.zeros_like(self.state_bounds[:, 0])
 
     def position(self):
         return self.state[0:3]
@@ -162,12 +163,12 @@ class QuadcopterEnv(BaseEnv):
         state_dot = np.zeros(12)
         # velocities
         state_dot[:3] = state[3:6]
-        
+
         # accelerations
         wRb = transforms3d.euler.euler2mat(*state[6:9])
         state_dot[3:6] = 1.0 / mass * \
             (wRb @ np.array([0, 0, F]) - np.array([0, 0, mass * g]))
-        
+
         # angular velocity
         # note that there is a assumption that the quadcopter is at the stable state,
         # i.e. the roll and pitch angle are close to 0. So the angular velocity in the body
@@ -178,7 +179,7 @@ class QuadcopterEnv(BaseEnv):
         # angular acceleration - Euler's equation of motion
         # https://en.wikipedia.org/wiki/Euler%27s_equations_(rigid_body_dynamics)
         omega = state[9:12]
-        omega_dot = invI @ ( M - np.cross(omega, I @ omega))
+        omega_dot = invI @ (M - np.cross(omega, I @ omega))
         state_dot[9:12] = omega_dot
         return state_dot
 
@@ -187,12 +188,12 @@ class QuadcopterEnv(BaseEnv):
         """
         # limit the thrust and torques within the propeller
         prop_thrusts = invA @ u
-        prop_thrusts_clamped = np.clip(prop_thrusts,minF/4,maxF/4)
+        prop_thrusts_clamped = np.clip(prop_thrusts, minF/4, maxF/4)
         u = A @ prop_thrusts_clamped
-        state = integrate.odeint(self.state_dot, state, [0,dt], args = (u,))[1]
+        state = integrate.odeint(self.state_dot, state, [0, dt], args=(u,))[1]
 
         # wrap angle
-        for i in range(6,9):
+        for i in range(6, 9):
             state[i] = wrap_angle(state[i])
 
         for i in range(len(state)):
@@ -217,27 +218,31 @@ class QuadcopterEnv(BaseEnv):
 
         # info
         info = {
-                'goal': self.reach(self.state, self.goal),
-                'goal_dis': self.distance(self.state, self.goal),
-                'collision': not self.valid_state_check(self.state)
-            }
+            'goal': self.reach(self.state, self.goal),
+            'goal_dis': self.distance(self.state, self.goal),
+            'collision': not self.valid_state_check(self.state)
+        }
 
         # reward
-        positionRewardCoeff_ = -1e-2
-        thrustRewardCoeff_ = -1e-3
-        orientationRewardCoeff_ = 1e-3
-        angleVelRewardCoeff_ = -1e-4
+        positionRewardCoeff_ = -1e-1
+        thrustRewardCoeff_ = -1e-2
+        orientationRewardCoeff_ = -1e-2*3
+        angleVelRewardCoeff_ = -1e-2
 
         # penalize the distance to goal
-        positionReward_ = positionRewardCoeff_ * self.distance(self.state, self.goal)
-        # penalize large thrusts
-        thrustReward_ = thrustRewardCoeff_ * np.linalg.norm(action)
-        # penalize unstable orientations (roll and pitch are not 0) 
-        orientationReward_ = orientationRewardCoeff_ * np.linalg.norm(self.orientation()[:2])
+        positionReward_ = positionRewardCoeff_ * \
+            self.distance(self.state, self.goal)
+        # penalize large torques
+        thrustReward_ = thrustRewardCoeff_ * np.linalg.norm(action[1:])
+        # penalize unstable orientations (roll and pitch are not 0)
+        orientationReward_ = orientationRewardCoeff_ * \
+            np.linalg.norm(self.orientation()[:2])
         # penalize large angular velocities
         angleVelReward_ = angleVelRewardCoeff_ * np.linalg.norm(self.omega())
-        
-        reward = positionReward_+thrustReward_+orientationReward_+angleVelReward_+20.0*info['goal']-50.0*info['collision']
+
+        reward = 0.3+positionReward_+thrustReward_+orientationReward_ + \
+            angleVelReward_+20.0*info['goal']-50.0*info['collision']
+        # reward = -0.2*np.linalg.norm(self.state[3:5])+0.1*self.state[5]+thrustReward_+orientationReward_+angleVelReward_
 
         # done
         done = info['goal'] or info['collision'] or self.current_time >= self.max_time
@@ -251,29 +256,30 @@ class QuadcopterEnv(BaseEnv):
 
     def distance(self, state, goal):
         return np.linalg.norm(state[:3]-goal[:3])
-    def reach(self, state, goal):
-        return self.distance(state, goal) <= 0.5
 
-    def reset(self, low=1.0, high=10.0):
-        start = np.zeros_like(self.state_bounds[:,0])
-        goal = np.zeros_like(self.state_bounds[:,0])
+    def reach(self, state, goal):
+        return self.distance(state, goal) <= 0.1
+
+    def reset(self, low=0.2, high=0.5):
+        start = np.zeros_like(self.state_bounds[:, 0])
+        goal = np.zeros_like(self.state_bounds[:, 0])
 
         while True:
-            start[:3] = np.random.uniform(
-                low=self.state_bounds[:3, 0], high=self.state_bounds[:3, 1])
-            start[5] = np.random.uniform(low=-np.pi, high=np.pi)
+            start[:] = np.random.uniform(
+                low=self.state_bounds[:, 0], high=self.state_bounds[:, 1])
+            # start[2] = np.random.uniform(0.4, 2)
+            # start[3:6] = 0
 
             goal[:3] = np.random.uniform(
                 low=self.state_bounds[:3, 0], high=self.state_bounds[:3, 1])
-            
+            # goal[2] = np.random.uniform(0.4, 2)
             if self.valid_state_check(start) and self.valid_state_check(goal) and low <= self.distance(start, goal) <= high:
                 break
-                
+
         self.state = start
         self.goal = goal
         self.current_time = 0.0
         return self._obs()
-
 
     def world_frame(self):
         """ position returns a 3x6 matrix
@@ -282,8 +288,8 @@ class QuadcopterEnv(BaseEnv):
         origin = self.state[0:3]
         rot = transforms3d.euler.euler2mat(*self.orientation())
         wHb = np.block(
-            [[rot, origin.reshape((-1,1))],
-            [np.array([[0, 0, 0, 1]])]]
+            [[rot, origin.reshape((-1, 1))],
+             [np.array([[0, 0, 0, 1]])]]
         )
 
         quadBodyFrame = body_frame.T
@@ -293,21 +299,22 @@ class QuadcopterEnv(BaseEnv):
 
     def render(self, t=0.001):
         if not hasattr(self, 'ax'):
-            fig = plt.figure(figsize=(12,12))
+            fig = plt.figure(figsize=(12, 12))
             ax = fig.add_subplot(111, projection='3d')
             self.ax = ax
-           
+
         self.ax.cla()
         # self.dynamic_model.state = self.euler2quad(self.state)
         frame = self.world_frame()
         self.ax.plot(frame[0, [0, 2]], frame[1, [0, 2]],
-                     frame[2, [0, 2]], '-', marker='.', c='cyan', markeredgecolor='k', markerfacecolor = 'k')[0]
+                     frame[2, [0, 2]], '-', marker='.', c='cyan', markeredgecolor='k', markerfacecolor='k')[0]
         self.ax.plot(frame[0, [1, 3]], frame[1, [1, 3]],
-                     frame[2, [1, 3]], '-', marker='.',c='red', markeredgecolor='k', markerfacecolor='k')[0]
+                     frame[2, [1, 3]], '-', marker='.', c='red', markeredgecolor='k', markerfacecolor='k')[0]
         self.ax.plot(frame[0, [4, 5]], frame[1, [4, 5]], frame[2, [
                      4, 5]], '-', c='blue')[0]
 
-        self.ax.plot([self.goal[0]], [self.goal[1]], [self.goal[2]], '-o', c='red')
+        self.ax.plot([self.goal[0]], [self.goal[1]],
+                     [self.goal[2]], '-o', c='red')
         self.ax.set_xlim([MIN_X, MAX_X])
         self.ax.set_ylim([MIN_Y, MAX_Y])
         self.ax.set_zlim([MIN_Z, MAX_Z])
@@ -317,12 +324,14 @@ class QuadcopterEnv(BaseEnv):
 
     def valid_state_check(self, state):
         valid = super().valid_state_check(state)
+        # valid = valid and state[2] > self.state_bounds[2,0]
         return valid
 
 
 class QuadcopterEnvV2(QuadcopterEnv):
     """Obstacles are added in this environment, the quadcopter learns to avoid collision and reach the goal region. It can sense surrounding obstacles and represent them in a 3-D local map.
     """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -344,16 +353,16 @@ class QuadcopterEnvV2(QuadcopterEnv):
                             )
             )
         self.body_points = np.array(list(itertools.product(*sample_positions)))
-        
+
         # TODO: add obstacles
         self.obstacles = []
 
         self.local_map_shape, self.local_map_points = self._init_local_map()
         self.observation_space = {
             'basic': spaces.Box(
-                low = self.state_bounds[:,0], 
-                high = self.state_bounds[:,1]
-                ),
+                low=self.state_bounds[:, 0],
+                high=self.state_bounds[:, 1]
+            ),
             'local_map': spaces.Box(low=0, high=1, shape=self.local_map_shape)
         }
 
@@ -369,7 +378,8 @@ class QuadcopterEnvV2(QuadcopterEnv):
         size = 1.0
         reso = 0.2
         samples_x = np.linspace(-size, size, int(2*size/reso)+1)
-        sample_positions = np.array(list(itertools.product(samples_x, samples_x, samples_x)))
+        sample_positions = np.array(
+            list(itertools.product(samples_x, samples_x, samples_x)))
 
         # (channel, length, width, height)
         local_map_shape = (1, len(samples_x), len(samples_x), len(samples_x))
@@ -382,14 +392,15 @@ class QuadcopterEnvV2(QuadcopterEnv):
         origin = self.state[0:3]
         rot = transforms3d.quaternions.quat2mat(self.state[6:10])
         wTb = np.block(
-            [[rot, origin.reshape((-1,1))],
-             [np.zeros((1,3)), 1]]
-            )
+            [[rot, origin.reshape((-1, 1))],
+             [np.zeros((1, 3)), 1]]
+        )
         # world sample position
-        wPos = (wTb @ np.concatenate((self.local_map_points, np.ones((len(self.local_map_points), 1))),axis=1).T).T[:,:3]
+        wPos = (wTb @ np.concatenate((self.local_map_points, np.ones(
+            (len(self.local_map_points), 1))), axis=1).T).T[:, :3]
         local_map = self.valid_point_check(wPos).astype(np.float32)
         return local_map
-    
+
     def valid_point_check(self, points):
         """Check collision for a batch of points
         Args:
@@ -423,7 +434,7 @@ class QuadcopterEnvV2(QuadcopterEnv):
             ax = fig.add_subplot(111, projection='3d')
             self.ax = ax
             # self.ax.axis([-5,5,-5,5,0,5])
-           
+
         self.ax.cla()
         # self.dynamic_model.state = self.euler2quad(self.state)
         frame = self.world_frame()
@@ -434,8 +445,9 @@ class QuadcopterEnvV2(QuadcopterEnv):
         self.ax.plot(frame[0, [4, 5]], frame[1, [4, 5]], frame[2, [
                      4, 5]], '-', c='blue', marker='o', markevery=2)[0]
 
-        self.ax.plot([self.goal[0]], [self.goal[1]], [self.goal[2]], '-o', c='red')
-        
+        self.ax.plot([self.goal[0]], [self.goal[1]],
+                     [self.goal[2]], '-o', c='red')
+
         # TODO: render obstacles
 
         self.ax.set_xlim([MIN_X, MAX_X])
@@ -443,36 +455,36 @@ class QuadcopterEnvV2(QuadcopterEnv):
         self.ax.set_zlim([MIN_Z, MAX_Z])
         plt.pause(t)
 
-from scipy.linalg import solve_continuous_are, solve_discrete_are
+
 def LQR_continuous_gain():
     A = np.array([
-        [0,0,0,1,0,0,0,0,0,0,0,0],
-        [0,0,0,0,1,0,0,0,0,0,0,0],
-        [0,0,0,0,0,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,g,0,0,0,0],
-        [0,0,0,0,0,0,-g,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,1,0,0],
-        [0,0,0,0,0,0,0,0,0,0,1,0],
-        [0,0,0,0,0,0,0,0,0,0,0,1],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, g, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, -g, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ])
 
     B = np.array([
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [1/mass,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,1/Ix,0,0],
-        [0,0,1/Iy,0],
-        [0,0,0,1/Iz],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [1/mass, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 1/Ix, 0, 0],
+        [0, 0, 1/Iy, 0],
+        [0, 0, 0, 1/Iz],
     ])
 
     # Q = np.eye(12)*1.0
@@ -483,60 +495,65 @@ def LQR_continuous_gain():
     K = np.linalg.inv(R) @ B.T @ S
     return K
 
+
 def LQR_discrete_gain(dt):
     A = np.array([
-        [0,0,0,1,0,0,0,0,0,0,0,0],
-        [0,0,0,0,1,0,0,0,0,0,0,0],
-        [0,0,0,0,0,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,g,0,0,0,0],
-        [0,0,0,0,0,0,-g,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,1,0,0],
-        [0,0,0,0,0,0,0,0,0,0,1,0],
-        [0,0,0,0,0,0,0,0,0,0,0,1],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, g, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, -g, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ])
 
     A = np.eye(12) + A*dt
 
     B = np.array([
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [1/mass,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,1/Ix,0,0],
-        [0,0,1/Iy,0],
-        [0,0,0,1/Iz],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [1/mass, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 1/Ix, 0, 0],
+        [0, 0, 1/Iy, 0],
+        [0, 0, 0, 1/Iz],
     ])
 
     B = B*dt
 
     # Q = np.eye(12)*1.0
-    Q = np.diag([1, 1.0, 3.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
-    R = np.eye(4)*0.001
+    Q = np.diag([0.4, 0.4, 0.4, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1])*4
+    R = np.diag([0.1,0.2,0.2,0.2])*0.001
+    # Q = np.diag([1, 1.0, 3.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+    # R = np.eye(4)*0.001
 
     P = solve_discrete_are(A, B, Q, R)
     K = np.linalg.inv(R + B.T @ P @ B) @ (B.T @ P @ A)
     return K
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-import imageio
+
+
 def LQR_control():
     env = QuadcopterEnv()
-    env.goal[:3] =  np.array([0.5,0.6,1.0])
+    env.reset()
     K = LQR_discrete_gain(env.dt)
     env.render()
-    x_e, u_e = env.goal_, np.array([mass*g, 0, 0, 0]) # equalibrium
-    for i in range(30):
+    x_e, u_e = env.goal_, np.array([mass*g, 0, 0, 0])  # equalibrium
+    while True:
         u = u_e - K @ (env.state_-x_e)
         obs, reward, done, info = env.step(env.normalize_u(u))
         env.render()
+        if done: break
+
 
 if __name__ == "__main__":
     LQR_control()
