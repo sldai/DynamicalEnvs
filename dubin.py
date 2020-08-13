@@ -90,8 +90,8 @@ class DubinEnv(BaseEnv):
             low=-np.inf, high=np.inf, shape=self.local_map_shape
         )
         self.state_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,))
-        self.observation_space = spaces.Tuple(
-            (self.local_map_space, self.state_space))
+        self.observation_space = {'dynamic':self.state_space, 'map':self.local_map_space}
+
 
         self.current_time = 0.0
         self.max_time = 100.0
@@ -240,16 +240,19 @@ class DubinEnv(BaseEnv):
     def _obs(self):
         local_map = self.sample_local_map()
         local_map = local_map.reshape(self.local_map_shape)
-        wRb = euler.euler2mat(0, 0, self.state[2])[:2, :2]
-        wTb = np.block([[wRb, self.state[:2].reshape((-1, 1))],
-                        [np.zeros((1, 2)), 1]])
-        bTw = np.linalg.inv(wTb)
-        b_goal_pos = T_transform2d(bTw, self.goal[:2])
-        b_theta = normalize_angle(self.goal[2] - self.state[2])
-        b_goal = np.block([b_goal_pos, np.cos(b_theta), np.sin(b_theta)])
+        # wRb = euler.euler2mat(0, 0, self.state[2])[:2, :2]
+        # wTb = np.block([[wRb, self.state[:2].reshape((-1, 1))],
+        #                 [np.zeros((1, 2)), 1]])
+        # bTw = np.linalg.inv(wTb)
+        # b_goal_pos = T_transform2d(bTw, self.goal[:2])
+        # b_theta = normalize_angle(self.goal[2] - self.state[2])
+        # b_goal = np.block([b_goal_pos, np.cos(b_theta), np.sin(b_theta)])
 
         # goal configuration in the robot coordinate frame, local map
-        obs = (local_map, b_goal)
+        # obs = (local_map, b_goal)
+
+        dynamic_obs = np.array([self.state[0]-self.goal[0], self.state[1]-self.goal[1], self.state[2], self.goal[2]])
+        obs = {'dynamic': }
         return obs
 
     def reset(self, low=5, high=12, obs_list_list= None):
