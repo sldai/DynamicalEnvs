@@ -207,7 +207,7 @@ class QuadcopterEnv(BaseEnv):
 
     def step(self, action):
         # action is normalized trust of each propepler
-        # action = np.clip(action, self.action_space.low, self.action_space.high)
+        action = np.clip(action, self.action_space.low, self.action_space.high)
         # total thrust and Moment
         u = action * self.scale + self.bias
         self.state = self.motion(self.state, u, self.dt)

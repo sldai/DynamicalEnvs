@@ -5,9 +5,9 @@ from base_env import BaseEnv
 from gym import spaces
 import transforms3d.euler as euler
 import itertools
-from rigid import Obstacle, Rigid, CircleRobot, RectRobot, Vehicle
+from rigid import Obstacle, RectObs, Rigid, CircleRobot, RectRobot, Vehicle
 from draw import plot_obs_list, plot_problem_definition, plot_robot
-
+import os
 
 def normalize_angle(angle):
     norm_angle = angle % (2 * np.pi)
@@ -41,9 +41,16 @@ step_dt = 1.0/5.0  # action step size
 # physical constrain
 max_v = 2.0
 min_v = 0.0
-max_phi = np.pi / 3.0
+max_acc = 4.0
+min_acc = -4.0
 
+max_phi = np.pi / 6.0
+d = 0.6
+# local map representation
+free = 0
+occupancy = 1
 
+import pickle 
 class DubinEnv(BaseEnv):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -58,21 +65,27 @@ class DubinEnv(BaseEnv):
         self.min_phi = -self.max_phi
 
         # vehicle shape
-        self.rigid_robot = Vehicle(0.6, np.array(
-            [[-0.4, -0.5], [1.0, 0.5]]), color="k")
+        self.rigid_robot = Vehicle(d, np.array(
+            [[-0.4, -0.6], [1.6, 0.6]]), color="k")
 
         self.workspace_bounds = np.array(
             [[-20, 20], [-20, 20]], dtype=float
         )
         # x, y, theta
         self.state_bounds = np.array(
-            [[-20, 20], [-20, 20], [-np.pi, np.pi]], dtype=float
+            [[-20, 20], [-20, 20], [-np.pi, np.pi], [min_v, max_v]], dtype=float
         )
 
-        # v, phi
+        # the control space
         self.cbounds = np.array(
-            [[self.min_v, self.max_v], [self.min_phi, self.max_phi]],
+            [[min_acc, max_acc], [self.min_phi, self.max_phi]],
         )
+        self.bias = (self.cbounds[:, 1] + self.cbounds[:, 0])/2
+        self.scale = (self.cbounds[:, 1] - self.cbounds[:, 0])/2
+
+        # action is normalized control
+        self.action_space = spaces.Box(
+            low=-1, high=1, shape=(len(self.cbounds),))
 
         # obstacles
         self.obs_list = []
@@ -80,9 +93,8 @@ class DubinEnv(BaseEnv):
         self.state = np.zeros(len(self.state_bounds))
         self.goal = np.zeros(len(self.state))
 
-        # the control space
-        self.action_space = spaces.Box(
-            low=self.cbounds[:, 0], high=self.cbounds[:, 1])
+
+
 
         # observations include the local map and the current and goal states
         self._init_sample_positions()
@@ -90,11 +102,17 @@ class DubinEnv(BaseEnv):
             low=-np.inf, high=np.inf, shape=self.local_map_shape
         )
         self.state_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,))
-        self.observation_space = {'dynamic':self.state_space, 'map':self.local_map_space}
+        self.observation_space = {
+            'dynamics':spaces.Box(low=-np.inf, high=np.inf, shape=(5,)), 
+            'map':spaces.Box(low=-np.inf, high=np.inf, shape=self.local_map_shape)
+            }
 
+        obstacles = pickle.load(open(os.path.dirname(__file__)+'/dubin_obstacles_list.pkl','rb'))[0]
+        obstacles = [RectObs(**obs) for obs in obstacles]
+        self.set_obs(obstacles)
 
         self.current_time = 0.0
-        self.max_time = 100.0
+        self.max_time = 50.0
         self.get_outline_points()
 
     def get_outline_points(self):
@@ -108,16 +126,28 @@ class DubinEnv(BaseEnv):
 
 
     def state_dot(self, state, t, input_u):
+        """ODE
+
+        Arguments:
+            state {array} -- current state
+            t {float} -- dt
+            input_u {array} -- control signal
+
+        Returns:
+            array -- next state
+        """
         state_dot = np.zeros_like(state)
-        state_dot[0] = input_u[0] * np.cos(state[2])
-        state_dot[1] = input_u[0] * np.sin(state[2])
-        state_dot[2] = input_u[0] / (self.rigid_robot.d / np.tan(input_u[1]))
+        state_dot[0] = state[3] * np.cos(state[2])
+        state_dot[1] = state[3] * np.sin(state[2])
+        state_dot[2] = state[3] / self.rigid_robot.d * np.tan(input_u[1])
+        state_dot[3] = input_u[0]
         return state_dot
 
     def motion(self, state, input_u, duration):
         state = integrate.odeint(self.state_dot, state, [
                                  0, duration], args=(input_u,))[1]
         state[2] = normalize_angle(state[2])
+        state = np.clip(state, self.state_bounds[:,0], self.state_bounds[:,1])
         return state
 
     def reach(self, state, goal):
@@ -189,6 +219,7 @@ class DubinEnv(BaseEnv):
         self.local_map_shape = (1, len(ba), len(lr))
         self.sample_reso = sample_reso
         self.sample_positions = sample_positions
+        self.sample_dis = np.linalg.norm(sample_positions, axis=1).reshape(self.local_map_shape)
 
     def sample_local_map(self):
         """Sampling points of local map, 
@@ -199,13 +230,22 @@ class DubinEnv(BaseEnv):
                         [np.zeros((1, 2)), 1]])
         # world sample position
         wPos = T_transform2d(wTb, self.sample_positions)
-        local_map = self.valid_point_check(wPos).astype(np.float32)
+        local_map_ = self.valid_point_check(wPos)
+        local_map = np.array(local_map_, dtype=np.float32)
+        local_map[local_map_] = free
+        local_map[np.logical_not(local_map_)] = occupancy 
         return local_map
 
+    def normalize_u(self, u):
+        """Normalize the actual control signals within the range [-1,1]
+        """
+        return (u-self.bias)/self.scale
     ################### gym interface ########################
     def step(self, action):
+        action = np.clip(action, self.action_space.low, self.action_space.high)
+        u = action * self.scale + self.bias
         dt = self.step_dt
-        self.state = self.motion(self.state, action, dt)
+        self.state = self.motion(self.state, u, dt)
         self.current_time += dt
 
         # obs
@@ -224,7 +264,11 @@ class DubinEnv(BaseEnv):
         info['goal_dis'] = np.linalg.norm(x1-x2)  # SE(2) distance
         if info['goal_dis'] <= 1.5:
             info['goal'] = True
-        info['clearance'] = min(self.get_clearance(self.state), 3.0)
+        if np.any(obs['local_map']==occupancy):
+            # print(self.sample_dis[obs['local_map']==occupancy])
+            info['clearance'] = min(np.min(self.sample_dis[obs['local_map']==occupancy]), 4.0)
+        else:
+            info['clearance'] = 4.0
         info['collision'] = not self.valid_state_check(self.state)
 
         # reward
@@ -251,8 +295,8 @@ class DubinEnv(BaseEnv):
         # goal configuration in the robot coordinate frame, local map
         # obs = (local_map, b_goal)
 
-        dynamic_obs = np.array([self.state[0]-self.goal[0], self.state[1]-self.goal[1], self.state[2], self.goal[2]])
-        obs = {'dynamic': }
+        dynamic_obs = np.array([self.state[0]-self.goal[0], self.state[1]-self.goal[1], self.state[2], self.state[3], self.goal[2]])
+        obs = {'dynamics': dynamic_obs, 'local_map': local_map}
         return obs
 
     def reset(self, low=5, high=12, obs_list_list= None):
@@ -263,7 +307,7 @@ class DubinEnv(BaseEnv):
         # if len(self.obs_list_list) > 0:
         #     ind_obs = np.random.randint(0, len(self.obs_list_list))
         #     self.set_obs(self.obs_list_list[ind_obs])
-
+        min_clearance = 1.0
         # sample a random start goal configuration
         start = np.zeros(len(self.state_bounds))
         goal = np.zeros(len(self.state_bounds))
@@ -271,7 +315,7 @@ class DubinEnv(BaseEnv):
             # sample a valid state
             start[:] = np.random.uniform(
                 self.state_bounds[:, 0], self.state_bounds[:, 1])
-            if self.get_clearance(start) <= 0.5:
+            if self.get_clearance(start) <= min_clearance:
                 continue
 
             # sample a valid goal
@@ -282,10 +326,11 @@ class DubinEnv(BaseEnv):
                                   *self.state_bounds[0, :])
                 goal[1] = np.clip(start[1] + r*np.sin(theta),
                                   *self.state_bounds[1, :])
-                if self.get_clearance(goal) > 0.5:
+                goal[2] = np.random.uniform(-np.pi, np.pi)
+                if self.get_clearance(goal) > min_clearance:
                     break
 
-            if self.get_clearance(start) > 0.5 and self.get_clearance(goal) > 0.5 and low < np.linalg.norm(start[:2]-goal[:2]) < high:
+            if self.get_clearance(start) > min_clearance and self.get_clearance(goal) > min_clearance and low < np.linalg.norm(start[:2]-goal[:2]) < high:
                 break
         self.state = start
         self.goal = goal
@@ -294,7 +339,7 @@ class DubinEnv(BaseEnv):
         obs = self._obs()
         return obs
 
-    def render(self, mode='human', plot_localwindow=True):
+    def render(self, mode='human', plot_localwindow=True, t = 0.1):
         if not hasattr(self, 'ax'):
             fig, self.ax = plt.subplots(figsize=(6, 6))
             plt.xticks([])
@@ -309,7 +354,8 @@ class DubinEnv(BaseEnv):
                                 self.rigid_robot, self.state, self.goal)
         plot_robot(self.ax, self.rigid_robot, self.state[:3])
         self.ax.axis([-22, 22, -22, 22])
-        plt.pause(0.1)
+        if t is not None:
+            plt.pause(0.1)
         return None
     ####################### gym interface ####################
 
@@ -319,8 +365,8 @@ class DubinEnv(BaseEnv):
                         [np.zeros((1, 2)), 1]])
         tmp_wPos = T_transform2d(wTb, self.sample_positions)
         local_map = self.sample_local_map()
-        ind_non_free = local_map == 0
-        ind_free = local_map > 0
+        ind_non_free = local_map == occupancy
+        ind_free = local_map == free
 
         # plot boundary
         left_bot = [self.local_map_size[2], self.local_map_size[0]]
@@ -361,12 +407,21 @@ class DubinEnvCU(DubinEnv):
         return obs, reward, done, info
 
     def _obs(self):
-        obs = super()._obs()[1]  # without local map
+        obs = super()._obs()['dynamics']  # without local map
         return obs
 
-if __name__ == "__main__":
-    env = DubinEnvCU()
+
+
+def visualize():
+    env = DubinEnv()
+    env.reset()
     env.render()
-    for i in range(50):
-        env.step(np.random.randn(2))
+    done = False
+    while not done:
+        obs, reward, done, info = env.step(np.array([1.0,0.0]))
+        print(obs)
+        # print(info)
         env.render()
+if __name__ == "__main__":
+    visualize()
+    # dubin_curve()

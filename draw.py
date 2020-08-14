@@ -10,9 +10,9 @@ import matplotlib.patches as patches
 import matplotlib.animation as anim
 from rigid import RectObs, RectRobot, CircleRobot
 
-def plot_arrow(ax, x, y, yaw, length=1.5, width=0.3, color='k'): 
+def plot_arrow(ax, x, y, yaw, length=0.5, width=0.5, color='k'): 
     arrow = ax.arrow(x, y, length * np.cos(yaw), length * np.sin(yaw),
-            head_length=width, head_width=width, fc=color, ec=color)
+            width=0.1, head_width=0.4, fc=color, ec=color)
     return [arrow]
 
 def plot_robot(ax, rigidrobot, pose):

@@ -3,7 +3,13 @@ import gym
 import numpy as np
 
 class BaseEnv(ABC, gym.Env):
-    def __init__(self, **kwargs):
+    """The base environment speficies four major component for kinodynamic planning.
+    state_bounds: boundaries in the state space
+    cbounds: boundaries in the control space
+    motion: propagate the dynamics 
+    valid_state_check: collision checking
+    """
+    def __init__(self,**kwargs):
         super().__init__(**kwargs)
         self.state_bounds = None
         self.cbounds = None
