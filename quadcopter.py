@@ -324,10 +324,9 @@ class QuadcopterEnv(BaseEnv):
 
     def valid_state_check(self, state):
         valid = super().valid_state_check(state)
-        # valid = valid and state[2] > self.state_bounds[2,0]
         return valid
 
-
+from rigid import CubeObs
 class QuadcopterEnvV2(QuadcopterEnv):
     """Obstacles are added in this environment, the quadcopter learns to avoid collision and reach the goal region. It can sense surrounding obstacles and represent them in a 3-D local map.
     """
@@ -355,7 +354,7 @@ class QuadcopterEnvV2(QuadcopterEnv):
         self.body_points = np.array(list(itertools.product(*sample_positions)))
 
         # TODO: add obstacles
-        self.obstacles = []
+        self.obstacles = [CubeObs([0.3, 0.3, 0.3], 0.3)]
 
         self.local_map_shape, self.local_map_points = self._init_local_map()
         self.observation_space = {
@@ -449,6 +448,8 @@ class QuadcopterEnvV2(QuadcopterEnv):
                      [self.goal[2]], '-o', c='red')
 
         # TODO: render obstacles
+        for obs in self.obstacles:
+            
 
         self.ax.set_xlim([MIN_X, MAX_X])
         self.ax.set_ylim([MIN_Y, MAX_Y])

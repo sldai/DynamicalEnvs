@@ -9,6 +9,7 @@ from rigid import Obstacle, RectObs, Rigid, CircleRobot, RectRobot, Vehicle
 from draw import plot_obs_list, plot_problem_definition, plot_robot
 import os
 
+
 def normalize_angle(angle):
     norm_angle = angle % (2 * np.pi)
     if norm_angle > np.pi:
@@ -35,8 +36,8 @@ def T_transform2d(aTb, bP):
         aP = aP_[:2, :].T
     return aP
 
-
-step_dt = 1.0/5.0  # action step size
+class C(O):
+step_dt = 1.0/10.0  # action step size
 
 # physical constrain
 max_v = 2.0
@@ -101,7 +102,7 @@ class DubinEnv(BaseEnv):
         self.local_map_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=self.local_map_shape
         )
-        self.state_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,))
+
         self.observation_space = {
             'dynamics':spaces.Box(low=-np.inf, high=np.inf, shape=(5,)), 
             'map':spaces.Box(low=-np.inf, high=np.inf, shape=self.local_map_shape)
@@ -240,6 +241,7 @@ class DubinEnv(BaseEnv):
         """Normalize the actual control signals within the range [-1,1]
         """
         return (u-self.bias)/self.scale
+
     ################### gym interface ########################
     def step(self, action):
         action = np.clip(action, self.action_space.low, self.action_space.high)
@@ -307,7 +309,7 @@ class DubinEnv(BaseEnv):
         # if len(self.obs_list_list) > 0:
         #     ind_obs = np.random.randint(0, len(self.obs_list_list))
         #     self.set_obs(self.obs_list_list[ind_obs])
-        min_clearance = 1.0
+        min_clearance = 2
         # sample a random start goal configuration
         start = np.zeros(len(self.state_bounds))
         goal = np.zeros(len(self.state_bounds))

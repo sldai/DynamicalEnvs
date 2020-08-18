@@ -172,6 +172,43 @@ class RectObs(Obstacle):
         return dis
     
 
+class CubeObs(Obstacle):
+    def __init__(self, pos, size, color='black'):
+        """Cube obstacle for 3D environment
+
+        Arguments:
+            Obstacle  -- base class
+            pos {array} -- 3D position
+            size {float} -- cube size
+
+        Keyword Arguments:
+            color {str} -- color (default: {'black'})
+        """
+        self.color = color
+        self.pos = pos.copy()
+        self.size = size
+
+    def point_in_obstacle(self, point):
+        return self.points_in_obstacle(point.reshape((1,-1)))[0]
+    
+    def points_in_obstacle(self, points):
+        """Collision check for a batch of points
+
+        Arguments:
+            points {2d array} -- [[x1,y1,z1], [x2,y2,z2], ...]
+        
+        Returns:
+            [1d array] -- True is collision       
+        """
+        c = np.abs(points - self.pos) < self.size
+        
+        return np.logical_and(np.logical_and(c[:,0], c[:,1]), c[:,2])
+
+    def dis2point(self, point):
+        raise NotImplementedError()
+
+
+
 
 def T_transform2d(aTb, bP):
     """
@@ -241,6 +278,7 @@ class Rigid(ABC):
     def collision_obs(self, obstacle):
         """Return True if collision
         """
+
 
 
 
