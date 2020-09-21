@@ -200,13 +200,55 @@ class CubeObs(Obstacle):
         Returns:
             [1d array] -- True is collision       
         """
-        c = np.abs(points - self.pos) < self.size
+        c = np.abs(points - self.pos) <= self.size/2
         
         return np.logical_and(np.logical_and(c[:,0], c[:,1]), c[:,2])
 
     def dis2point(self, point):
         raise NotImplementedError()
 
+    def draw(self, ax):
+        x = [
+            self.pos[0] - self.size/2,
+            self.pos[0] + self.size/2,
+            self.pos[0] + self.size/2,
+            self.pos[0] - self.size/2,
+            self.pos[0] - self.size/2,
+            self.pos[0] + self.size/2,
+            self.pos[0] + self.size/2,
+            self.pos[0] - self.size/2
+            ]
+        y = [
+            self.pos[1] - self.size/2,
+            self.pos[1] - self.size/2,
+            self.pos[1] + self.size/2,
+            self.pos[1] + self.size/2,
+            self.pos[1] - self.size/2,
+            self.pos[1] - self.size/2,
+            self.pos[1] + self.size/2,
+            self.pos[1] + self.size/2
+        ] 
+        z = [
+            self.pos[2] - self.size/2,
+            self.pos[2] - self.size/2,
+            self.pos[2] - self.size/2,
+            self.pos[2] - self.size/2,
+            self.pos[2] + self.size/2,
+            self.pos[2] + self.size/2,
+            self.pos[2] + self.size/2,
+            self.pos[2] + self.size/2
+        ]
+        points = np.array(list(zip(x, y, z)))
+        # list of sides' polygons of figure
+        verts = [[points[0],points[1],points[2],points[3]],
+        [points[4],points[5],points[6],points[7]], 
+        [points[0],points[1],points[5],points[4]], 
+        [points[2],points[3],points[7],points[6]], 
+        [points[1],points[2],points[6],points[5]],
+        [points[4],points[7],points[3],points[0]]]
+        return ax.add_collection3d(Poly3DCollection(verts, 
+                            facecolors='cyan', linewidths=1, edgecolors='r', alpha=.25))
+    
 
 
 
@@ -443,4 +485,39 @@ class CartPole(object):
             collision = self.cart.collision_obs(obstacle) \
                         or line_segment_intersect_aabb(pole, obstacle.rect) is not None
             return collision
-            
+
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+MIN_X = -1
+MAX_X = 1
+MIN_Y = -1
+MAX_Y = 1
+MIN_Z = 0
+MAX_Z = 2
+import pickle
+if __name__ == "__main__":
+
+    size = 0.4
+    for i in range(1):
+        obs = []
+        fig = plt.figure(figsize=(12, 12))
+        ax = fig.add_subplot(111, projection='3d')
+        for i in range(7):
+
+            pos = np.random.uniform(low=np.array([-1, -1, 0.0])+size/2, high=np.array([1, 1, 2.0])-size/2)
+            cube = CubeObs(pos=pos,size=size)
+            obs.append(cube)
+            cube.draw(ax)
+        ax.set_xlim([MIN_X, MAX_X])
+        ax.set_ylim([MIN_Y, MAX_Y])
+        ax.set_zlim([MIN_Z, MAX_Z])
+        obs_list = [{'pos': o.pos, 'size': o.size, 'color': o.color} for o in obs]
+        pickle.dump(obs_list, open('quadcopter_obstacles.pkl','wb'))
+        plt.savefig('quadcopter_obstacles.png')
+    
+    plt.show()
+
+
+    # draw

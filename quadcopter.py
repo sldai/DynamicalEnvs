@@ -20,7 +20,7 @@ I = np.array([(0.00025, 0, 0),
 
 invI = np.linalg.inv(I)
 
-prop_radius = 0.04
+prop_radius = 0.00
 arm_length = 0.086  # meter
 height = 0.05
 minF = 0.0
@@ -120,6 +120,11 @@ class QuadcopterEnv(BaseEnv):
             [MIN_ROLL_DOT, MAX_ROLL_DOT],  # p
             [MIN_PITCH_DOT, MAX_PITCH_DOT],  # q
             [MIN_YAW_DOT, MAX_YAW_DOT],  # r
+        ], dtype=float)
+        self.workspace_bounds = np.array([
+            [MIN_X, MAX_X],  # x
+            [MIN_Y, MAX_Y],  # y
+            [MIN_Z, MAX_Z],  # z
         ], dtype=float)
 
         self.observation_space = spaces.Box(
@@ -326,7 +331,18 @@ class QuadcopterEnv(BaseEnv):
         valid = super().valid_state_check(state)
         return valid
 
+    def get_bounds(self):
+        return {
+            'workspace_bounds': self.workspace_bounds,
+            'state_bounds': self.state_bounds,
+            'cbounds': self.cbounds
+        }    
+
 from rigid import CubeObs
+import os
+# local map representation
+free = 0
+occupancy = 1
 class QuadcopterEnvV2(QuadcopterEnv):
     """Obstacles are added in this environment, the quadcopter learns to avoid collision and reach the goal region. It can sense surrounding obstacles and represent them in a 3-D local map.
     """
@@ -354,15 +370,15 @@ class QuadcopterEnvV2(QuadcopterEnv):
         self.body_points = np.array(list(itertools.product(*sample_positions)))
 
         # TODO: add obstacles
-        self.obstacles = [CubeObs([0.3, 0.3, 0.3], 0.3)]
-
+        obstacles = pickle.load(open(os.path.dirname(__file__)+'/quadcopter_obstacles.pkl','rb'))
+        self.obstacles = [CubeObs(**obs) for obs in obstacles]
         self.local_map_shape, self.local_map_points = self._init_local_map()
         self.observation_space = {
-            'basic': spaces.Box(
+            'dynamics': spaces.Box(
                 low=self.state_bounds[:, 0],
                 high=self.state_bounds[:, 1]
             ),
-            'local_map': spaces.Box(low=0, high=1, shape=self.local_map_shape)
+            'map': spaces.Box(low=0, high=1, shape=self.local_map_shape)
         }
 
     def _init_local_map(self):
@@ -374,8 +390,8 @@ class QuadcopterEnvV2(QuadcopterEnv):
         local_map_shape: the local map shape, used for CNN 
         sample_positions: the positions need to be sampled in the body coordinate system.
         """
-        size = 1.0
-        reso = 0.2
+        size = 0.3
+        reso = 0.05
         samples_x = np.linspace(-size, size, int(2*size/reso)+1)
         sample_positions = np.array(
             list(itertools.product(samples_x, samples_x, samples_x)))
@@ -389,7 +405,7 @@ class QuadcopterEnvV2(QuadcopterEnv):
         with value representing occupancy (0 is non-free, 1 is free)
         """
         origin = self.state[0:3]
-        rot = transforms3d.quaternions.quat2mat(self.state[6:10])
+        rot = transforms3d.euler.euler2mat(*self.orientation())
         wTb = np.block(
             [[rot, origin.reshape((-1, 1))],
              [np.zeros((1, 3)), 1]]
@@ -397,8 +413,11 @@ class QuadcopterEnvV2(QuadcopterEnv):
         # world sample position
         wPos = (wTb @ np.concatenate((self.local_map_points, np.ones(
             (len(self.local_map_points), 1))), axis=1).T).T[:, :3]
-        local_map = self.valid_point_check(wPos).astype(np.float32)
-        return local_map
+        local_map_ = self.valid_point_check(wPos)
+        local_map = np.array(local_map_, dtype=np.float32)
+        local_map[local_map_] = free
+        local_map[np.logical_not(local_map_)] = occupancy 
+        return wPos, local_map
 
     def valid_point_check(self, points):
         """Check collision for a batch of points
@@ -418,14 +437,29 @@ class QuadcopterEnvV2(QuadcopterEnv):
 
     def valid_state_check(self, state):
         valid = super().valid_state_check(state)
-        valid = valid and np.all(self.valid_point_check(self.body_points))
+        origin = state[0:3]
+        rot = transforms3d.euler.euler2mat(*self.orientation())
+        wTb = np.block(
+            [[rot, origin.reshape((-1, 1))],
+             [np.zeros((1, 3)), 1]]
+        )
+        # world sample position
+        wPos = (wTb @ np.concatenate((self.body_points, np.ones(
+            (len(self.body_points), 1))), axis=1).T).T[:, :3]
+        valid = valid and np.all(self.valid_point_check(wPos))
         return valid
 
     def step(self, action):
         obs, reward, done, info = super().step(action)
 
         # TODO: modefy the reward function for collsion avoidance
+        reward = 0.0
         return obs, reward, done, info
+    def _obs(self):
+        dynamics = super()._obs()
+        pos, value = self.sample_local_map()
+        obs = {'dynamics': dynamics, 'local_map': value.reshape(self.local_map_shape)}
+        return obs
 
     def render(self, t=0.001):
         if not hasattr(self, 'ax'):
@@ -435,7 +469,7 @@ class QuadcopterEnvV2(QuadcopterEnv):
             # self.ax.axis([-5,5,-5,5,0,5])
 
         self.ax.cla()
-        # self.dynamic_model.state = self.euler2quad(self.state)
+    
         frame = self.world_frame()
         self.ax.plot(frame[0, [0, 2]], frame[1, [0, 2]],
                      frame[2, [0, 2]], '-', c='cyan')[0]
@@ -449,12 +483,56 @@ class QuadcopterEnvV2(QuadcopterEnv):
 
         # TODO: render obstacles
         for obs in self.obstacles:
-            
-
+            obs.draw(self.ax)
+        # self.plot_localmap()
         self.ax.set_xlim([MIN_X, MAX_X])
         self.ax.set_ylim([MIN_Y, MAX_Y])
         self.ax.set_zlim([MIN_Z, MAX_Z])
-        plt.pause(t)
+        if t is not None:
+            plt.pause(t)
+
+    def plot_localmap(self):
+        tmp_wPos, local_map = self.sample_local_map()
+        ind_non_free = local_map == occupancy
+        ind_free = local_map == free
+        plt.plot(tmp_wPos[ind_free, 0], tmp_wPos[ind_free, 1], tmp_wPos[ind_free, 2],
+                 '.', c='g', markersize=1)
+        # print(tmp_wPos[ind_non_free, 0])
+        plt.plot(tmp_wPos[ind_non_free, 0],
+                 tmp_wPos[ind_non_free, 1], tmp_wPos[ind_non_free, 2], '.', c='red', markersize=1)
+
+        # plot boundary
+        # left_bot = [self.local_map_size[2], self.local_map_size[0]]
+        # left_top = [self.local_map_size[2], self.local_map_size[1]]
+        # rigit_top = [self.local_map_size[3], self.local_map_size[1]]
+        # rigit_bot = [self.local_map_size[3], self.local_map_size[0]]
+        # boundry = np.array([left_bot, left_top, rigit_top,
+        #                     rigit_bot, left_bot], dtype=np.float32)
+        # boundry = T_transform2d(wTb, boundry)
+        # plt.plot(boundry[:, 0], boundry[:, 1], c='cyan')
+
+
+    def reset(self, low=0.2, high=0.5):
+        start = np.zeros_like(self.state_bounds[:, 0])
+        goal = np.zeros_like(self.state_bounds[:, 0])
+
+        while True:
+            
+            start[:] = np.random.uniform(
+                low=self.state_bounds[:, 0], high=self.state_bounds[:, 1])
+            # start[2] = np.random.uniform(0.4, 2)
+            start[3:] = 0
+
+            goal[:3] = np.random.uniform(
+                low=self.state_bounds[:3, 0], high=self.state_bounds[:3, 1])
+            # goal[2] = np.random.uniform(0.4, 2)
+            if self.valid_state_check(start) and self.valid_state_check(goal) and low <= self.distance(start, goal) <= high:
+                break
+
+        self.state = start
+        self.goal = goal
+        self.current_time = 0.0
+        return self._obs()
 
 
 def LQR_continuous_gain():
@@ -544,16 +622,20 @@ def LQR_discrete_gain(dt):
 
 
 def LQR_control():
-    env = QuadcopterEnv()
+    env = QuadcopterEnvV2()
     env.reset()
+    env.state[:3] = np.array([0,0,0.2])
     K = LQR_discrete_gain(env.dt)
     env.render()
+    plt.show()
     x_e, u_e = env.goal_, np.array([mass*g, 0, 0, 0])  # equalibrium
     while True:
         u = u_e - K @ (env.state_-x_e)
         obs, reward, done, info = env.step(env.normalize_u(u))
+        print(info)
         env.render()
         if done: break
+    plt.show()
 
 
 if __name__ == "__main__":

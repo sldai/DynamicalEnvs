@@ -40,18 +40,18 @@ step_dt = 1.0/10.0  # action step size
 
 # physical constrain
 max_v = 2.0
-min_v = 0.0
+min_v = -1.0
 max_acc = 4.0
 min_acc = -4.0
 
 max_phi = np.pi / 6.0
-d = 0.6
+d = 1.0
 # local map representation
 free = 0
 occupancy = 1
 
 import pickle 
-class DubinEnv(BaseEnv):
+class CarEnv(BaseEnv):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         """
@@ -104,10 +104,10 @@ class DubinEnv(BaseEnv):
 
         self.observation_space = {
             'dynamics':spaces.Box(low=-np.inf, high=np.inf, shape=(5,)), 
-            'map':spaces.Box(low=-np.inf, high=np.inf, shape=self.local_map_shape)
+            'local_map':spaces.Box(low=-np.inf, high=np.inf, shape=self.local_map_shape)
             }
 
-        obstacles = pickle.load(open(os.path.dirname(__file__)+f'/dubin_obstacles/dubin_obstacles_{0}.pkl','rb'))
+        obstacles = pickle.load(open(os.path.dirname(__file__)+'/dubin_obstacles_list.pkl','rb'))[0]
         obstacles = [RectObs(**obs) for obs in obstacles]
         self.set_obs(obstacles)
 
@@ -198,7 +198,7 @@ class DubinEnv(BaseEnv):
                 return False
         return True
 
-    def _init_sample_positions(self, left=-5, right=5, backward=-4, forward=10):
+    def _init_sample_positions(self, left=-10, right=10, backward=-10, forward=10):
         """
         the robot can sense the local environment by sampling the local map.
 
@@ -328,10 +328,10 @@ class DubinEnv(BaseEnv):
                 goal[1] = np.clip(start[1] + r*np.sin(theta),
                                   *self.state_bounds[1, :])
                 goal[2] = np.random.uniform(-np.pi, np.pi)
-                if self.get_clearance(goal) > min_clearance:
+                if self.get_clearance(goal) > 0.5:
                     break
 
-            if self.get_clearance(start) > min_clearance and self.get_clearance(goal) > min_clearance and low < np.linalg.norm(start[:2]-goal[:2]) < high:
+            if self.get_clearance(start) > min_clearance and self.get_clearance(goal) > 0.5 and low < np.linalg.norm(start[:2]-goal[:2]) < high:
                 break
         self.state = start
         self.goal = goal
@@ -396,7 +396,7 @@ class DubinEnv(BaseEnv):
 # ################### collision-unaware version #################
 
 
-class DubinEnvCU(DubinEnv):
+class CarEnvCU(CarEnv):
     def __init__(self):
         super().__init__()
         self.observation_space = self.state_space
@@ -414,7 +414,7 @@ class DubinEnvCU(DubinEnv):
 
 
 def visualize():
-    env = DubinEnv()
+    env = CarEnv()
     env.reset()
     env.render()
     done = False
