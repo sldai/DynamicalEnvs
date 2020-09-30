@@ -2,8 +2,14 @@ import sys
 import os
 sys.path.append(f'{os.path.dirname(__file__)}/..')
 import numpy as np
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-
+def draw_line_3d(ax, p, p_index, color='b', alpha=1):
+    for p_i in p_index:
+        ax.plot3D(p[p_i, 0], p[p_i, 1], p[p_i, 2], c=color, alpha=alpha)
+        
 def centered_box_to_points_3d(center, size):
     half_size = [s/2 for s in size]
     direction, p = [1, -1], []
@@ -35,9 +41,32 @@ def q_to_points_3d(state):
                 p.append([max_min[x_d][0], max_min[y_d][1], max_min[z_d][2]])
     return np.array(p)
 
+def draw_box_3d(ax, p, color='b', alpha=1, surface_color='blue', linewidths=1, edgecolors='k'):
+    index_lists = [[[0, 4], [4, 6], [6, 2], [2, 0], [0, 1], [1, 5], [5, 7], [7, 3], [3, 1], [1, 5]],
+                  [[4, 5]],
+                  [[6, 7]],
+                  [[2, 3]]]
+    for p_i in index_lists:
+        draw_line_3d(ax, np.array(p), p_i, color=color, alpha=alpha)
+    edges = [[p[e_i] for e_i in f_i] for f_i in [[0, 1, 5, 4],
+                                                 [4, 5, 7, 6],
+                                                 [6, 7, 3, 2],
+                                                 [2, 0, 1, 3],
+                                                 [2, 0, 4, 6],
+                                                 [3, 1, 5, 7]]]
+    faces = Poly3DCollection(edges, linewidths=linewidths, edgecolors=edgecolors)
+    faces.set_facecolor(surface_color)
+    faces.set_alpha(0.1)
+    ax.add_collection3d(faces)
 
-class Quadrotor:
-    def __init__(self, obs_list):
+def draw_quadrotor(ax, state, color='orange'):
+    """state format: [x, y, z, quat_x, quat_y, quat_z, w, ...]
+    """
+    draw_box_3d(ax, q_to_points_3d(state), alpha=0.3, surface_color=color, linewidths=0.)
+
+class Quadrotor(object):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.MIN_C1 = -15.
         self.MAX_C1 = -5.
         self.MIN_C = -1.
@@ -51,9 +80,10 @@ class Quadrotor:
         self.MASS_INV = 1.
         self.BETA = 1.
         self.EPS = 2.107342e-08
-        self.obs_list = obs_list
+        self.obs_list = []
         self.radius = 0.25
         self.width = 1.0
+        self.integration_step = 2e-2
 
     def enforce_bounds_quaternion(self, qstate):
         # enforce quaternion
@@ -115,12 +145,13 @@ class Quadrotor:
         qdot[:, 10:13] = u[:, 1:4]
         return qdot
 
-    def propagate(self, start_state, control, steps, integration_step):
+    def propagate(self, start_state, control, duration):
         '''
         control (n_sample)
         t is (n_sample)
         # control in [NS, NC=4], t in [NS]
         '''
+        steps = int(duration/self.integration_step)
         q = start_state.copy()
         control[0] = np.clip(control[0], self.MIN_C1, self.MAX_C1)
         control[1] = np.clip(control[1], self.MIN_C, self.MAX_C)
@@ -128,8 +159,8 @@ class Quadrotor:
         control[3] = np.clip(control[3], self.MIN_C, self.MAX_C)
         q[3:7] = self.enforce_bounds_quaternion(q[3:7])
         for t in range(0, steps):
-            q += integration_step * self._compute_derivatives(q, control)
-            q[:3] = np.clip(q[:3, self.MIN_X, self.MAX_X])
+            q += self.integration_step * self._compute_derivatives(q, control)
+            q[:3] = np.clip(q[:3], self.MIN_X, self.MAX_X)
             q[7:11] = np.clip(q[7:11], self.MIN_V, self.MAX_V)
             q[10:13] = np.clip(q[10:13], self.MIN_W, self.MAX_W)
             q[3:7] = self.enforce_bounds_quaternion(q[3:7])
@@ -167,3 +198,4 @@ class Quadrotor:
                 quadrotor_min_max[0][2] <= obs_min_max[1][2] and quadrotor_min_max[1][2] >= obs_min_max[0][2]:
                     return False
         return True
+
