@@ -1,4 +1,7 @@
 
+import sys
+import os
+sys.path.append(f'{os.path.dirname(__file__)}/..')
 from scipy import integrate
 import numpy as np
 import matplotlib.pyplot as plt
@@ -109,12 +112,15 @@ def draw_car(ax, x, y, yaw, steer, color='black'):
 
 
 class car_points:
-    def __init__(self):
-        self.res = 0.1
+    def __init__(self, res=0.1, v_w=param.v_w, r_b=param.r_b, r_f=param.r_f):
+        self.res = res
+        self.v_w = v_w
+        self.r_b = r_b
+        self.r_f = r_f
         x_min_max = np.append(
-            np.arange(param.r_b, param.r_f, self.res), param.r_f)
+            np.arange(self.r_b, self.r_f, self.res), self.r_f)
         y_min_max = np.append(
-            np.arange(-param.v_w/2, param.v_w/2, self.res), param.v_w/2)
+            np.arange(-self.v_w/2, self.v_w/2, self.res), self.v_w/2)
         self.points = np.array(list(itertools.product(x_min_max, y_min_max)))
 
     def get_points_world_frame(self, x, y, yaw):

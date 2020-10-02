@@ -64,6 +64,7 @@ def draw_quadrotor(ax, state, color='orange'):
     """
     draw_box_3d(ax, q_to_points_3d(state), alpha=0.3, surface_color=color, linewidths=0.)
 
+
 class Quadrotor(object):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

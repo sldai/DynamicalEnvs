@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.append(f'{os.path.dirname(__file__)}/..')
 from scipy import integrate
 import numpy as np
 import matplotlib.pyplot as plt
@@ -25,6 +28,8 @@ class param:
 
     dt = 0.2  # duration of one control step [s]
     integration_dt = 2e-2  # for integration [s]
+
+    goal_radius = 1.0  # goal region [m]
 
 class Arrow:
     def __init__(self, ax, x, y, theta, L, c):
@@ -89,12 +94,12 @@ def draw_base(ax, x, y, yaw, color='black'):
 
 
 class base_points:
-    def __init__(self):
-        self.res = 0.1
+    def __init__(self, res=0.1, radius=param.v_r):
+        self.res = res
         angles = np.linspace(-np.pi, np.pi, 50)
         base = np.zeros((len(angles), 2))
-        base[:, 0] = param.v_r * np.cos(angles)
-        base[:, 1] = param.v_r * np.sin(angles)
+        base[:, 0] = radius * np.cos(angles)
+        base[:, 1] = radius * np.sin(angles)
         self.points = base
 
     def get_points_world_frame(self, x, y, yaw):
@@ -102,7 +107,7 @@ class base_points:
         """
         rot = np.array([[np.cos(yaw), -np.sin(yaw)],
                         [np.sin(yaw), np.cos(yaw)]])
-        wPoints = self.points @ rot.T + np.array(x, y)
+        wPoints = self.points @ rot.T + np.array([x, y])
         return wPoints
 
 
@@ -112,12 +117,14 @@ def wrap_angle(angle):
         norm_angle -= 2 * np.pi
     return norm_angle
 
-
 class DifferentialDrive(object):
     def __init__(self, **kwargs):
         self.base_points = base_points()
         self.obs_list = []
-
+    
+    def set_obs_list(self, obs_list):
+        self.obs_list = obs_list
+        
     def state_dot(self, state, t, input_u):
         """ODE
 
@@ -146,7 +153,7 @@ class DifferentialDrive(object):
         step_num = int(duration/param.integration_dt)
         
         for t in range(step_num):
-            state = self.state_dot(state, 0, control)
+            state += self.state_dot(state, 0, control) * param.integration_dt 
             state[2] = wrap_angle(state[2])
             state[0] = np.clip(state[0], param.x_min, param.x_max)
             state[1] = np.clip(state[1], param.y_min, param.y_max)
