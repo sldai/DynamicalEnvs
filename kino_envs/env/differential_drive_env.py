@@ -52,7 +52,7 @@ class DifferentialDriveEnv(DifferentialDrive, gym.GoalEnv):
         self.state = self.propagate(self.state.copy(), u.copy(), param.dt)
         self.cur_step += 1
 
-        obs = self._obs()
+        obs = self.get_obs()
         info = {
             "goal": self.distance(self.state, self.goal)<=param.goal_radius,
             "collision": not self.valid_state(self.state),
@@ -67,7 +67,7 @@ class DifferentialDriveEnv(DifferentialDrive, gym.GoalEnv):
         )
         return obs, reward, done, info
 
-    def _obs(self):
+    def get_obs(self):
         obs = {
             "observation": np.array(
                 [
@@ -119,7 +119,7 @@ class DifferentialDriveEnv(DifferentialDrive, gym.GoalEnv):
         self.goal = goal
 
         self.cur_step = 0
-        return self._obs()
+        return self.get_obs()
 
     @staticmethod
     def distance(state1, state2):
@@ -129,7 +129,7 @@ class DifferentialDriveEnv(DifferentialDrive, gym.GoalEnv):
 
     def render(self, mode='human', **kwargs):
         if not hasattr(self, 'ax'):
-            fig, self.ax = plt.subplots(figsize=(6, 6))
+            fig, self.ax = plt.subplots(figsize=(10, 10))
             plt.xticks([])
             plt.yticks([])
 
@@ -210,7 +210,7 @@ class DifferentialDriveObsEnv(DifferentialDriveEnv):
             }
         )
     
-    def _obs(self):
+    def get_obs(self):
         obs = {
             "state": np.array(
                 [
@@ -229,7 +229,7 @@ class DifferentialDriveObsEnv(DifferentialDriveEnv):
     
     def render(self, mode='human', **kwargs):
         if not hasattr(self, 'ax'):
-            fig, self.ax = plt.subplots(figsize=(6, 6))
+            fig, self.ax = plt.subplots(figsize=(10, 10))
             plt.xticks([])
             plt.yticks([])
 
