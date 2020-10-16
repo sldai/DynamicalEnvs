@@ -21,10 +21,10 @@ class param:
     max_acc_v = 1.0  # [m/s^2]
     max_acc_w = np.pi  # [rad/s^2]
 
-    x_min = -20.0  # [m]
-    x_max = 20.0  # [m]
-    y_min = -20.0  # [m]
-    y_max = 20.0  # [m]
+    x_min = -5.0  # [m]
+    x_max = 5.0  # [m]
+    y_min = -5.0  # [m]
+    y_max = 5.0  # [m]
 
     dt = 0.2  # duration of one control step [s]
     integration_dt = 2e-2  # for integration [s]

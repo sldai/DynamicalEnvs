@@ -21,6 +21,14 @@ def valid_state(state, obs_list, width=1.0, radius=0.25):
                 return False
     return True
 
+def point_distance_rectangle(p, rect):
+    # function distance(rect, p) {
+    # var dx = Math.max(rect.min.x - p.x, 0, p.x - rect.max.x);
+    # var dy = Math.max(rect.min.y - p.y, 0, p.y - rect.max.y);
+    # return Math.sqrt(dx*dx + dy*dy);
+    # }
+    pass
+
 class QuadrotorEnv(gym):
     def __init__(**kwargs):
         super().__init__(**kwargs)

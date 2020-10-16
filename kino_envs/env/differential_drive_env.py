@@ -2,7 +2,7 @@ import sys
 import os
 
 sys.path.append(f"{os.path.dirname(__file__)}/..")
-from system.differential_drive import DifferentialDrive
+from system.differential_drive import DifferentialDrive, wrap_angle
 from system.differential_drive import param, draw_base, base_points
 from system.rigid import CircleObs, RectangleObs
 from scipy import integrate
@@ -22,15 +22,15 @@ def valid_state(state, base_points, obs_list):
     return True
 
 class DifferentialDriveEnv(DifferentialDrive, gym.GoalEnv):
-    _max_episode_steps = int(30 / param.dt)
+    _max_episode_steps = int(15 / param.dt)
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         self.observation_space = spaces.Dict(
             {
-                "state": spaces.Box(-20, 20, (5,)),
-                "achieved_goal": spaces.Box(-20, 20, (2,)),
-                "desired_goal": spaces.Box(-20, 20, (2,)),
+                "observation": spaces.Box(-10, 10, (5,)),
+                "achieved_goal": spaces.Box(-10, 10, (2,)),
+                "desired_goal": spaces.Box(-10, 10, (2,)),
             }
         )
 
@@ -58,6 +58,7 @@ class DifferentialDriveEnv(DifferentialDrive, gym.GoalEnv):
             "collision": not self.valid_state(self.state),
             "control": u,
             "current time": self.cur_step * param.dt,
+            "is_success": self.distance(self.state, self.goal)<=param.goal_radius
         }
         reward = self.compute_reward(obs["achieved_goal"], obs["desired_goal"], info)
         done = (
@@ -86,17 +87,13 @@ class DifferentialDriveEnv(DifferentialDrive, gym.GoalEnv):
     def compute_reward(self, achieved_goal, desired_goal, info):
         """
         """
-        if info["collision"]:
-            return -2.0
-        elif info["goal"]:
-            return 1.0
-        else:
-            return -0.1
+        return -(np.linalg.norm(achieved_goal-desired_goal, axis=-1)>param.goal_radius).astype(np.float32)
+
 
     def reset(self):
         """
         """
-        dis_range = [5.0, 12.0]
+        dis_range = [5.0, 10.0]
         start = np.zeros(5)
         goal = np.zeros(5)
 
@@ -116,6 +113,8 @@ class DifferentialDriveEnv(DifferentialDrive, gym.GoalEnv):
             if dis_range[0] <= self.distance(start, goal) <= dis_range[1]:
                 break
         self.state = start
+        self.state[3] = np.random.uniform(param.min_v, param.max_v)
+        self.state[4] = np.random.uniform(-param.max_w, param.max_w)
         self.goal = goal
 
         self.cur_step = 0
@@ -158,7 +157,7 @@ class LocalMap(object):
         self.res = res
         x_min_max = np.linspace(-size/2,size/2,int(size/res)+1)
         y_min_max = np.linspace(-size/2,size/2,int(size/res)+1)
-        self.shape = (len(x_min_max), len(y_min_max))
+        self.shape = (1, len(x_min_max), len(y_min_max))  # channel, x, y
         self.points = np.array(list(itertools.product(x_min_max, y_min_max)))
 
 
@@ -173,8 +172,8 @@ class LocalMap(object):
         pixels[np.linalg.norm(self.points, axis=1) <= param.v_r] = self.robot_value  # robot
 
         # reshape to the image shape
-        Wpoints = Wpoints.reshape([self.shape[0],self.shape[1],2])
-        pixels = pixels.reshape([self.shape[0],self.shape[1], 1])  # one channel
+        Wpoints = Wpoints.reshape([self.shape[1],self.shape[2],2])
+        pixels = pixels.reshape(self.shape)  # one channel
         return Wpoints.copy(), pixels.copy()
     
     def draw(self, ax, obs_list, x, y, yaw, obs_color='purple', robot_color='orange', free_color='cyan'):
@@ -200,11 +199,12 @@ class DifferentialDriveObsEnv(DifferentialDriveEnv):
         super().__init__(**kwargs)
         obs_path = f'{os.path.dirname(__file__)}/../../obstacles/differential_drive/0.pkl'
         self.set_obs_list([RectangleObs(**obs_param) for obs_param in pickle.load(open(obs_path,'rb'))])
+        # self.set_obs_list([])
         self.local_map = LocalMap(res=0.1)
         self.observation_space = spaces.Dict(
             {
                 "state": spaces.Box(-20, 20, (5,)),
-                "local_map": spaces.Box(-1.0, 1.0, (self.local_map.shape[0], self.local_map.shape[1], 1)),
+                "local_map": spaces.Box(-1.0, 1.0, (self.local_map.shape)),
                 "achieved_goal": spaces.Box(-20, 20, (2,)),
                 "desired_goal": spaces.Box(-20, 20, (2,)),
             }
@@ -226,6 +226,41 @@ class DifferentialDriveObsEnv(DifferentialDriveEnv):
             "desired_goal": self.goal[:2],
         }
         return obs
+
+    def step(self, action):
+        u = action.copy()
+        u = u * self.control_scale + self.control_bias
+        self.state = self.propagate(self.state.copy(), u.copy(), param.dt)
+        self.cur_step += 1
+
+        obs = self.get_obs()
+        info = {
+            "goal": self.distance(self.state, self.goal)<=param.goal_radius,
+            "collision": not self.valid_state(self.state),
+            "control": u,
+            "current time": self.cur_step * param.dt,
+        }
+        
+        # get clearance
+        points, pixels = self.local_map.sample(self.obs_list, self.state[0], self.state[1], self.state[2])
+        points = points.reshape((np.prod(pixels.shape),2))
+        pixels = pixels.reshape((np.prod(pixels.shape),))
+        occ_points = points[pixels==self.local_map.occupancy_value]
+        if len(occ_points) > 0:
+            clearance = np.min(np.linalg.norm(occ_points - self.state[:2], axis=1)) - param.v_r 
+        else:
+            clearance = self.local_map.size/2 - param.v_r 
+        
+        heading_diff = abs(wrap_angle(np.arctan2(self.goal[1] - self.state[1], self.goal[0] - self.state[0]) - self.state[2]))
+        reward = info['goal'] * 5.0 + info['collision'] * (-12.0) + min(clearance, 1.0) * 0.05 + heading_diff * (-0.1) + self.state[3] * 0.1 - 0.1
+
+        reward *= 0.1
+        done = (
+            info["goal"]
+            or info["collision"]
+            or self.cur_step >= self._max_episode_steps
+        )
+        return obs, reward, done, info
     
     def render(self, mode='human', **kwargs):
         if not hasattr(self, 'ax'):
@@ -245,8 +280,7 @@ class DifferentialDriveObsEnv(DifferentialDriveEnv):
             draw_base(self.ax, self.state[0], self.state[1], self.state[2])
         # draw goal
         draw_base(self.ax, self.goal[0], self.goal[1], self.goal[2], color='red')
-        
-
+    
 
         self.ax.axis([param.x_min, param.x_max, param.y_min, param.y_max])
         plt.pause(param.dt)
