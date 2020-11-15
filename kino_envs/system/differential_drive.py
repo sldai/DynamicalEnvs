@@ -9,27 +9,27 @@ import itertools
 
 class param:
     # Vehicle config
-    v_r = 0.6  # vehicle radius [m]
-    wheelbase = 0.4  # wheel base: center to rear axle [m]
-    wheeldist = 0.8  # wheel dist: left to right wheel [m]
-    t_r = 0.40/2  # tire radius [m]
-    t_w = 0.30/2  # tire width [m]
+    v_r = 0.6/2  # vehicle radius [m]
+    wheelbase = 0.4/2  # wheel base: center to rear axle [m]
+    wheeldist = 0.8/2  # wheel dist: left to right wheel [m]
+    t_r = 0.40/2/2  # tire radius [m]
+    t_w = 0.30/2/2  # tire width [m]
 
-    max_v = 1.0  # [m/s]
+    max_v = 0.5  # [m/s]
     min_v = -0.2  # [m/s]
     max_w = np.pi  # [rad/s]
     max_acc_v = 1.0  # [m/s^2]
     max_acc_w = np.pi  # [rad/s^2]
 
-    x_min = -5.0  # [m]
-    x_max = 5.0  # [m]
-    y_min = -5.0  # [m]
-    y_max = 5.0  # [m]
+    x_min = -20.0  # [m]
+    x_max = 20.0  # [m]
+    y_min = -20.0  # [m]
+    y_max = 20.0  # [m]
 
     dt = 0.2  # duration of one control step [s]
     integration_dt = 2e-2  # for integration [s]
 
-    goal_radius = 1.0  # goal region [m]
+    goal_radius = 0.5  # goal region [m]
 
 class Arrow:
     def __init__(self, ax, x, y, theta, L, c):
